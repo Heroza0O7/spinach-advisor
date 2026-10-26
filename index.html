@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spinach Advisor</title>
+<meta name="description" content="AI growing advice for spinach from soil pH, soil moisture and local weather. Thailand–Japan project.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Layout: one column field report — AI status first, sensor readings, AI advice, ask box, forecast, history. */
+:root {
+  --bg: #f2f5ef;
+  --surface: #ffffff;
+  --fg: #16231a;
+  --muted: #5a6a5e;
+  --line: #d8e0d5;
+  --accent: #1d6a3a;
+  --accent-soft: #e2efe5;
+  --soil: #7a5634;
+  --good: #23784a;
+  --warn: #a86b0c;
+  --crit: #bf3b0b;
+  --info: #2a62a6;
+  --good-bg: #e3f2e8;
+  --warn-bg: #fbf0dc;
+  --crit-bg: #fbe5dc;
+  --info-bg: #e3edf8;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1611; --surface: #151f18; --fg: #e3ece4; --muted: #9aac9f; --line: #263629;
+    --accent: #5cc184; --accent-soft: #1b2e21; --soil: #c79b6d;
+    --good: #5cc184; --warn: #e2a843; --crit: #f07d4f; --info: #6fa9ea;
+    --good-bg: #183020; --warn-bg: #33270f; --crit-bg: #3a1d12; --info-bg: #15263a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1611; --surface: #151f18; --fg: #e3ece4; --muted: #9aac9f; --line: #263629;
+  --accent: #5cc184; --accent-soft: #1b2e21; --soil: #c79b6d;
+  --good: #5cc184; --warn: #e2a843; --crit: #f07d4f; --info: #6fa9ea;
+  --good-bg: #183020; --warn-bg: #33270f; --crit-bg: #3a1d12; --info-bg: #15263a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.55 var(--font-body);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.wrap {
+  max-width: 1080px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; line-height: 1.15; }
+h2 { font-size: 1.3rem; font-weight: 700; }
+h3 { font-size: 1rem; font-weight: 700; }
+.label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header */
+header { border-bottom: 1px solid var(--line); background: var(--surface); }
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding-block: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.brand svg { flex: none; }
+.brand h1 { font-size: 1.35rem; }
+.brand p { margin: 0; font-size: .8rem; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--bg); }
+.seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; font-weight: 600; font-size: .88rem; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.icon-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 12px; font-size: .85rem; font-weight: 500; }
+.icon-btn:hover { border-color: var(--accent); }
+
+/* Location bar */
+.locbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding-block: 12px; border-bottom: 1px solid var(--line); }
+.locbar .where { display: flex; align-items: baseline; gap: 8px; margin-right: auto; min-width: 0; flex-wrap: wrap; }
+.locbar .where strong { font-weight: 600; }
+.search { position: relative; }
+.search input { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; width: 200px; max-width: 100%; }
+.results { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 240px; max-width: 80vw; box-shadow: 0 8px 24px rgb(0 0 0 / .12); overflow: hidden; }
+.results button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 8px 12px; font-size: .88rem; }
+.results button:hover, .results button:focus-visible { background: var(--accent-soft); }
+
+main { display: grid; gap: 28px; padding-block: 24px 48px; }
+
+/* Status banner */
+.status { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; align-items: start; padding: 18px 20px; border-radius: 12px; background: var(--info-bg); }
+.status[data-level="good"] { background: var(--good-bg); }
+.status[data-level="warning"] { background: var(--warn-bg); }
+.status[data-level="critical"] { background: var(--crit-bg); }
+.status .dot { width: 14px; height: 14px; border-radius: 50%; margin-top: 8px; background: var(--info); }
+.status[data-level="good"] .dot { background: var(--good); }
+.status[data-level="warning"] .dot { background: var(--warn); }
+.status[data-level="critical"] .dot { background: var(--crit); }
+.status[data-level="loading"] .dot { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+.status h2 { font-size: clamp(1.3rem, 3.2vw, 1.8rem); }
+.status p { margin: 0; grid-column: 2; color: var(--muted); }
+.status .water { grid-column: 2; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: .78rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
+.chip.ai { background: var(--info-bg); color: var(--info); border-color: transparent; }
+.chip.live { background: var(--good-bg); color: var(--good); border-color: transparent; }
+.retry { border: 0; background: var(--accent); color: var(--surface); border-radius: 8px; padding: 6px 14px; font-weight: 600; font-size: .85rem; justify-self: start; }
+
+/* Tiles */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 860px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 420px) { .tiles { grid-template-columns: minmax(0, 1fr); } }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.tile .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tile .value { font-family: var(--font-display); font-size: 2.1rem; font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.tile .value small { font-family: var(--font-body); font-size: .9rem; font-weight: 500; color: var(--muted); margin-left: 2px; }
+.tile .sub { font-size: .82rem; color: var(--muted); }
+.pill { font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; background: var(--bg); color: var(--muted); }
+.pill.good { background: var(--good-bg); color: var(--good); }
+.pill.warning { background: var(--warn-bg); color: var(--warn); }
+.pill.critical { background: var(--crit-bg); color: var(--crit); }
+.pill.info { background: var(--info-bg); color: var(--info); }
+.scale { position: relative; height: 8px; border-radius: 4px; background: var(--line); margin-top: 6px; }
+.scale .mark { position: absolute; top: -5px; width: 4px; height: 18px; border-radius: 2px; background: var(--fg); transform: translateX(-2px); }
+.scale-labels { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: .68rem; color: var(--muted); }
+
+/* Advice */
+.section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.source { font-size: .85rem; color: var(--muted); margin: -4px 0 12px; }
+.advice { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 720px) { .advice { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; min-width: 0; }
+.card .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card .topic { font-size: .75rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-left: auto; }
+.card p { margin: 0; }
+.card .do { font-weight: 500; }
+.card .do::before { content: "Do: "; font-weight: 700; color: var(--accent); }
+.card.skeleton { min-height: 120px; background: linear-gradient(90deg, var(--surface), var(--accent-soft), var(--surface)); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* Ask */
+.ask { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; }
+.ask form { display: flex; gap: 8px; flex-wrap: wrap; }
+.ask input { flex: 1 1 260px; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 10px 12px; }
+.ask .send { border: 0; background: var(--accent); color: var(--surface); border-radius: 8px; padding: 10px 18px; font-weight: 600; }
+.ask .send:disabled { opacity: .6; cursor: wait; }
+.ask .examples { display: flex; flex-wrap: wrap; gap: 6px; }
+.ask .examples button { border: 1px solid var(--line); background: var(--bg); border-radius: 999px; padding: 4px 12px; font-size: .82rem; color: var(--muted); }
+.ask .examples button:hover { border-color: var(--accent); color: var(--fg); }
+.answer { white-space: pre-wrap; line-height: 1.6; padding: 12px 14px; border-radius: 10px; background: var(--accent-soft); }
+.answer .q { display: block; font-weight: 600; margin-bottom: 6px; }
+
+/* Forecast */
+.fc-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.forecast { display: grid; grid-template-columns: repeat(7, minmax(112px, 1fr)); min-width: 784px; }
+.day { padding: 12px 14px; border-right: 1px solid var(--line); display: grid; gap: 4px; align-content: start; }
+.day:last-child { border-right: 0; }
+.day .d { font-weight: 600; }
+.day .t { font-family: var(--font-mono); font-size: .95rem; }
+.day .t span { color: var(--muted); }
+.day .r { font-size: .8rem; color: var(--info); font-family: var(--font-mono); }
+.day .w { font-size: .8rem; color: var(--muted); }
+.day .pill { justify-self: start; margin-top: 4px; white-space: normal; }
+
+/* Charts */
+.charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 720px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.chart-box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.chart-box .canvas { position: relative; height: 220px; margin-top: 8px; }
+
+.notice { padding: 10px 14px; border-radius: 10px; background: var(--crit-bg); color: var(--fg); font-size: .88rem; }
+footer { border-top: 1px solid var(--line); padding-block: 20px 32px; font-size: .82rem; color: var(--muted); display: grid; gap: 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap head">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+        <path d="M17 31 C17 22 17 16 17 9" stroke="var(--soil)" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M17 20 C8 20 4 13 5 5 C13 5 17 11 17 20 Z" fill="var(--accent)"/>
+        <path d="M17 16 C24 16 29 11 29 4 C22 4 17 9 17 16 Z" fill="var(--good)" opacity=".75"/>
+      </svg>
+      <div>
+        <h1>Spinach Advisor</h1>
+        <p>AI growing advice · Thailand–Japan project</p>
+      </div>
+    </div>
+    <div class="seg" role="group" aria-label="Sensor data source">
+      <button type="button" id="site-thailand" data-site="thailand" aria-pressed="true">Thailand</button>
+      <button type="button" id="site-japan" data-site="japan" aria-pressed="false">Japan</button>
+    </div>
+    <button type="button" class="icon-btn" id="refresh">Refresh</button>
+  </div>
+</header>
+
+<div class="wrap locbar">
+  <div class="where">
+    <span class="label">Weather for</span>
+    <strong id="place-name">Locating…</strong>
+    <span class="muted" id="place-src" style="font-size:.8rem"></span>
+  </div>
+  <button type="button" class="icon-btn" id="use-gps">Use my location</button>
+  <button type="button" class="icon-btn" id="use-site">Use farm location</button>
+  <div class="search">
+    <input id="city" type="search" placeholder="Search a city…" autocomplete="off" aria-label="Search a city">
+    <div class="results" id="results" hidden></div>
+  </div>
+</div>
+
+<main class="wrap">
+  <div class="notice" id="notice" hidden></div>
+
+  <section class="status" id="status" data-level="loading" aria-live="polite">
+    <span class="dot" aria-hidden="true"></span>
+    <h2 id="headline">Loading the latest readings…</h2>
+    <p id="subline">Reading soil sensors and the weather forecast.</p>
+    <div class="water" id="chips"></div>
+  </section>
+
+  <section aria-label="Current conditions">
+    <div class="tiles">
+      <div class="tile">
+        <div class="top"><span class="label">Soil pH</span><span class="pill" id="ph-pill">…</span></div>
+        <div class="value" id="ph-val">–</div>
+        <div class="scale" aria-hidden="true"><div class="mark" id="ph-mark" hidden></div></div>
+        <div class="scale-labels" aria-hidden="true"><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span></div>
+      </div>
+      <div class="tile">
+        <div class="top"><span class="label">Soil moisture</span><span class="pill" id="m-pill">…</span></div>
+        <div class="value" id="m-val">–</div>
+        <div class="scale" aria-hidden="true"><div class="mark" id="m-mark" hidden></div></div>
+        <div class="scale-labels" aria-hidden="true"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+      </div>
+      <div class="tile">
+        <div class="top"><span class="label">Air temperature</span><span class="pill" id="t-pill">…</span></div>
+        <div class="value" id="t-val">–</div>
+        <div class="sub" id="t-sub">–</div>
+      </div>
+      <div class="tile">
+        <div class="top"><span class="label">Rain, next 24 h</span><span class="pill" id="r-pill">…</span></div>
+        <div class="value" id="r-val">–</div>
+        <div class="sub" id="r-sub">–</div>
+        <div class="sub" id="w-sub">–</div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="advice-h">
+    <div class="section-head">
+      <h2 id="advice-h">What to do now</h2>
+      <span class="muted" id="reading-time" style="font-size:.85rem"></span>
+    </div>
+    <p class="source" id="advice-source"></p>
+    <div class="advice" id="advice"></div>
+  </section>
+
+  <section aria-labelledby="ask-h">
+    <div class="section-head"><h2 id="ask-h">Ask the AI about your spinach</h2><span class="muted" style="font-size:.85rem">Answers use your current sensor and weather data</span></div>
+    <div class="ask">
+      <form id="ask-form">
+        <input id="ask-q" type="text" maxlength="500" placeholder="e.g. When should I harvest? Why are the leaves turning yellow?" aria-label="Your question">
+        <button class="send" id="ask-send" type="submit">Ask</button>
+      </form>
+      <div class="examples" id="ask-examples">
+        <button type="button">Is today a good day to sow seeds?</button>
+        <button type="button">How much should I water this week?</button>
+        <button type="button">What fertiliser does spinach need?</button>
+        <button type="button">How do I stop my spinach from bolting?</button>
+      </div>
+      <div class="answer" id="ask-answer" hidden></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="fc-h">
+    <div class="section-head">
+      <h2 id="fc-h">7-day outlook for spinach</h2>
+      <span class="muted" id="fc-summary" style="font-size:.85rem"></span>
+    </div>
+    <div class="fc-scroll"><div class="forecast" id="forecast"></div></div>
+  </section>
+
+  <section aria-labelledby="hist-h">
+    <div class="section-head">
+      <h2 id="hist-h">Sensor history</h2>
+      <div class="seg" role="group" aria-label="History range">
+        <button type="button" id="range-24h" data-range="24h" aria-pressed="true">24 hours</button>
+        <button type="button" id="range-7d" data-range="7d" aria-pressed="false">7 days</button>
+      </div>
+    </div>
+    <div class="charts">
+      <div class="chart-box"><span class="label">Soil pH</span><div class="canvas"><canvas id="ph-chart" aria-label="Soil pH history"></canvas></div></div>
+      <div class="chart-box"><span class="label">Soil moisture (%)</span><div class="canvas"><canvas id="m-chart" aria-label="Soil moisture history"></canvas></div></div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  <div>Advice: Google Gemini AI. Sensor data: Google Sheets. Weather: Open-Meteo.com (CC BY 4.0).</div>
+  <div>AI advice can be wrong. Check your plants in person before acting.</div>
+</footer>
+
+<script>
+/* ======================================================================
+   CONFIG: edit these values
+   aiUrl: the Web app URL of ai-advisor.gs (Google Apps Script).
+   sheet: the Google Sheet link (or just its ID). Share it as
+          "Anyone with the link – Viewer".
+   tab:   the name of the tab at the bottom of the sheet.
+   ====================================================================== */
+const CONFIG = {
+  aiUrl: "https://script.google.com/macros/s/AKfycbwNivBxpsE620Do0qTh3-kxw50QIZivqhqJUzAiBAbBO8oyZCo4E7hIhNWbrbTezSLGCQ/exec",
+  sites: {
+    thailand: {
+      label: "Thailand",
+      sheet: "https://docs.google.com/spreadsheets/d/1oLkGf7t38hQBRw-x6VOoe7m7fDuT8lmakFsLuqBTiXg/edit",
+      tab: "ชีต1",
+      timeZone: "Asia/Bangkok",
+      utcOffset: 7,
+      farm: { name: "Chiang Rai, Thailand", lat: 19.9105, lon: 99.8406 }
+    },
+    japan: {
+      label: "Japan",
+      sheet: "",
+      tab: "Sheet1",
+      timeZone: "Asia/Tokyo",
+      utcOffset: 9,
+      farm: { name: "Hyogo, Japan", lat: 34.6913, lon: 135.1830 }
+    }
+  },
+  refreshMinutes: 5
+};
+/* ====================================================================== */
+
+const $ = (s) => document.querySelector(s);
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem("spinach:" + k)); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem("spinach:" + k, JSON.stringify(v)); } catch (e) {} }
+};
+const state = {
+  site: store.get("site") === "japan" ? "japan" : "thailand",
+  range: "24h",
+  readings: [], dataError: "",
+  place: null, placeSource: "farm",
+  weather: null, weatherError: "",
+  ai: null, aiStatus: "idle", aiError: "", aiSig: "", aiTime: ""
+};
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const netMsg = (e) => (e.message === "Failed to fetch" ? "network error" : e.message);
+
+/* ---------- Google Sheets ---------- */
+function sheetId(s) {
+  if (!s) return "";
+  const m = String(s).match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  return m ? m[1] : (/^[a-zA-Z0-9_-]{20,}$/.test(s) ? s : "");
+}
+function parseTime(cell, offset) {
+  if (!cell || cell.v == null) return null;
+  const v = cell.v;
+  const toUtc = (y, mo, d, h, mi, s) => new Date(Date.UTC(y, mo, d, h || 0, mi || 0, s || 0) - offset * 3600e3);
+  if (typeof v === "string") {
+    let m = v.match(/^Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?/);
+    if (m) return toUtc(+m[1], +m[2], +m[3], +m[4], +m[5], +m[6]);
+    if (/[zZ]|[+-]\d\d:?\d\d$/.test(v)) { const d = new Date(v); if (!isNaN(d)) return d; }
+    m = v.match(/(\d{1,4})[\/.-](\d{1,2})[\/.-](\d{1,4})[ T,]*(?:(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (m) {
+      let y, mo, d;
+      if (m[1].length === 4) { y = +m[1]; mo = +m[2]; d = +m[3]; } else { d = +m[1]; mo = +m[2]; y = +m[3]; }
+      if (y > 2400) y -= 543; // Thai Buddhist year
+      return toUtc(y, mo - 1, d, +m[4], +m[5], +m[6]);
+    }
+  }
+  if (typeof v === "number" && v > 30000 && v < 80000) { // spreadsheet serial date
+    return new Date(Math.round((v - 25569) * 86400e3) - offset * 3600e3);
+  }
+  return null;
+}
+const num = (cell) => {
+  if (!cell || cell.v == null || cell.v === "") return null;
+  const n = typeof cell.v === "number" ? cell.v : parseFloat(String(cell.v).replace(",", "."));
+  return isFinite(n) ? n : null;
+};
+async function loadSheet(site) {
+  const id = sheetId(site.sheet);
+  if (!id) throw new Error("No Google Sheet link in CONFIG for " + site.label + ".");
+  const url = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&headers=1&sheet=${encodeURIComponent(site.tab)}&t=${Date.now()}`;
+  const res = await fetch(url);
+  const text = await res.text();
+  const start = text.indexOf("{"), end = text.lastIndexOf("}");
+  if (start < 0) throw new Error("The sheet is not shared publicly. Set sharing to “Anyone with the link – Viewer”.");
+  const json = JSON.parse(text.slice(start, end + 1));
+  if (json.status === "error") throw new Error((json.errors && json.errors[0] && json.errors[0].detailed_message) || "Google Sheets returned an error.");
+  const labels = json.table.cols.map((c) => (c.label || "").trim().toLowerCase());
+  let ti = labels.findIndex((l) => l.includes("time") || l.includes("date"));
+  let pi = labels.findIndex((l) => /\bph\b|ph_|ph value/.test(l) || l === "ph");
+  let mi = labels.findIndex((l) => l.includes("moist"));
+  if (ti < 0) ti = 0; if (pi < 0) pi = 1; if (mi < 0) mi = 2;
+  const rows = json.table.rows.map((r) => ({
+    t: parseTime(r.c[ti], site.utcOffset), ph: num(r.c[pi]), m: num(r.c[mi])
+  })).filter((r) => r.t && !isNaN(r.t) && (r.ph != null || r.m != null));
+  rows.sort((a, b) => a.t - b.t);
+  if (!rows.length) throw new Error("The sheet has no readings yet. Check the column names: Timestamp, pH_Value, Moisture.");
+  return rows;
+}
+
+/* ---------- Weather (Open-Meteo, no API key) ---------- */
+async function loadWeather(p) {
+  const url = "https://api.open-meteo.com/v1/forecast?latitude=" + p.lat + "&longitude=" + p.lon +
+    "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m" +
+    "&hourly=precipitation,precipitation_probability" +
+    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,uv_index_max,daylight_duration" +
+    "&timezone=auto&forecast_days=7";
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("weather service error " + res.status);
+  const w = await res.json();
+  const nowKey = w.current.time.slice(0, 13) + ":00";
+  let i0 = w.hourly.time.findIndex((t) => t >= nowKey); if (i0 < 0) i0 = 0;
+  let rain24 = 0, prob24 = 0;
+  for (let i = i0; i < Math.min(i0 + 24, w.hourly.time.length); i++) {
+    rain24 += w.hourly.precipitation[i] || 0;
+    prob24 = Math.max(prob24, w.hourly.precipitation_probability[i] || 0);
+  }
+  const d = w.daily;
+  return {
+    current: { temp: w.current.temperature_2m, rh: w.current.relative_humidity_2m, code: w.current.weather_code, wind: w.current.wind_speed_10m },
+    rain24: +rain24.toFixed(1), prob24,
+    days: d.time.map((date, i) => ({ date, tmax: d.temperature_2m_max[i], tmin: d.temperature_2m_min[i], rain: d.precipitation_sum[i] || 0,
+      prob: d.precipitation_probability_max[i] || 0, code: d.weather_code[i], uv: d.uv_index_max[i], daylight: (d.daylight_duration[i] || 0) / 3600 }))
+  };
+}
+const WMO = { 0: "Clear sky", 1: "Mostly clear", 2: "Partly cloudy", 3: "Overcast", 45: "Fog", 48: "Fog", 51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
+  56: "Freezing drizzle", 57: "Freezing drizzle", 61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Freezing rain", 67: "Freezing rain", 71: "Light snow", 73: "Snow",
+  75: "Heavy snow", 77: "Snow grains", 80: "Rain showers", 81: "Rain showers", 82: "Violent showers", 85: "Snow showers", 86: "Snow showers", 95: "Thunderstorm", 96: "Thunderstorm, hail", 99: "Thunderstorm, hail" };
+
+/* ---------- Location ---------- */
+function setPlace(p, source) {
+  state.place = p; state.placeSource = source;
+  store.set("place", { p, source });
+  $("#place-name").textContent = p.name;
+  $("#place-src").textContent = source === "gps" ? "(your location)" : source === "farm" ? "(farm location)" : "(searched)";
+}
+function askGps() {
+  return new Promise((done) => {
+    if (!navigator.geolocation) return done(false);
+    let settled = false;
+    const resolve = (v) => { if (!settled) { settled = true; done(v); } };
+    setTimeout(() => resolve(false), 15000); // viewer ignored the permission prompt
+    $("#place-name").textContent = "Locating…";
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const lat = +pos.coords.latitude.toFixed(4), lon = +pos.coords.longitude.toFixed(4);
+      let name = lat + ", " + lon;
+      try {
+        const r = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+        const j = await r.json();
+        const city = j.city || j.locality || j.principalSubdivision;
+        if (city) name = city + (j.countryName ? ", " + j.countryName : "");
+      } catch (e) {}
+      setPlace({ name, lat, lon }, "gps");
+      resolve(true);
+    }, () => resolve(false), { timeout: 10000, maximumAge: 600000 });
+  });
+}
+let searchTimer;
+async function searchCity(q) {
+  const box = $("#results");
+  if (q.trim().length < 2) { box.hidden = true; return; }
+  try {
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en&format=json`);
+    const j = await r.json();
+    const list = j.results || [];
+    box.innerHTML = list.length ? list.map((c, i) =>
+      `<button type="button" data-i="${i}">${esc(c.name)}<span class="muted">, ${esc([c.admin1, c.country].filter(Boolean).join(", "))}</span></button>`).join("")
+      : `<button type="button" disabled>No matching city</button>`;
+    box.hidden = false;
+    box.querySelectorAll("button[data-i]").forEach((b) => b.addEventListener("click", () => {
+      const c = list[+b.dataset.i];
+      setPlace({ name: c.name + ", " + c.country, lat: c.latitude, lon: c.longitude }, "search");
+      box.hidden = true; $("#city").value = "";
+      refreshWeather();
+    }));
+  } catch (e) { box.innerHTML = `<button type="button" disabled>City search is unavailable right now</button>`; box.hidden = false; }
+}
+
+/* ---------- AI (Gemini via Google Apps Script) ---------- */
+function aiContext() {
+  const site = CONFIG.sites[state.site], r = state.readings, latest = r[r.length - 1], w = state.weather;
+  const ctx = {
+    site: site.label,
+    location: state.place ? { name: state.place.name, lat: state.place.lat, lon: state.place.lon, source: state.placeSource } : null,
+    local_time: new Date().toLocaleString("en-GB", { timeZone: site.timeZone, weekday: "short", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+    latest_reading: null, last_24h: null, weather: null
+  };
+  if (latest) {
+    ctx.latest_reading = { time: latest.t.toISOString(), age_minutes: Math.round((Date.now() - latest.t) / 60000), soil_ph: latest.ph, soil_moisture_percent: latest.m };
+    const day = r.filter((x) => x.t >= latest.t - 24 * 3600e3);
+    const stats = (k) => {
+      const v = day.map((x) => x[k]).filter((x) => x != null);
+      return v.length ? { min: Math.min(...v), max: Math.max(...v), avg: +(v.reduce((s, x) => s + x, 0) / v.length).toFixed(2) } : null;
+    };
+    const ago6 = r.find((x) => x.t >= latest.t - 6 * 3600e3);
+    ctx.last_24h = { readings: day.length, soil_ph: stats("ph"), soil_moisture_percent: stats("m"), moisture_6h_ago: ago6 && ago6 !== latest ? ago6.m : null };
+  }
+  if (w) {
+    ctx.weather = {
+      now: { temperature_c: w.current.temp, humidity_percent: w.current.rh, conditions: WMO[w.current.code] || "", wind_kmh: w.current.wind },
+      rain_next_24h_mm: w.rain24, max_rain_chance_next_24h_percent: w.prob24,
+      days: w.days.map((d) => ({ date: d.date, max_c: d.tmax, min_c: d.tmin, rain_mm: d.rain, rain_chance_percent: d.prob, conditions: WMO[d.code] || "", uv_max: d.uv, daylight_hours: +d.daylight.toFixed(1) }))
+    };
+  }
+  return ctx;
+}
+async function postAi(body) {
+  const res = await fetch(CONFIG.aiUrl, { method: "POST", body: JSON.stringify(body) }); // text/plain: no CORS preflight
+  const j = await res.json();
+  if (j.error) throw new Error(j.error);
+  return j;
+}
+async function runAi(force) {
+  if (!CONFIG.aiUrl) { state.aiStatus = "error"; state.aiError = "The AI is not connected. Add the Apps Script web app URL to CONFIG.aiUrl."; render(); return; }
+  if (!state.readings.length) { state.aiStatus = "error"; state.aiError = "No sensor data to analyse."; render(); return; }
+  const latest = state.readings[state.readings.length - 1];
+  const sig = [state.site, +latest.t, state.place && state.place.lat, state.place && state.place.lon, !!state.weather].join("|");
+  if (!force && sig === state.aiSig && (state.ai || state.aiStatus === "loading")) return;
+  state.aiSig = sig; state.ai = null; state.aiStatus = "loading"; render();
+  try {
+    const j = await postAi({ mode: "advice", context: aiContext() });
+    if (sig !== state.aiSig) return; // site or place changed meanwhile
+    state.ai = j.advice; state.aiStatus = "ok";
+    state.aiTime = new Date(j.generated_at || Date.now()).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  } catch (e) {
+    if (sig !== state.aiSig) return;
+    state.aiStatus = "error"; state.aiError = netMsg(e); state.aiSig = "";
+  }
+  render();
+}
+async function askAi(q) {
+  q = q.trim(); if (!q) return;
+  const box = $("#ask-answer"), btn = $("#ask-send");
+  box.hidden = false;
+  if (!CONFIG.aiUrl) { box.textContent = "The AI is not connected. Add the Apps Script web app URL to CONFIG.aiUrl."; return; }
+  btn.disabled = true; btn.textContent = "Thinking…";
+  box.innerHTML = `<span class="q"></span><span class="a muted">The AI is thinking…</span>`;
+  box.querySelector(".q").textContent = q;
+  const a = box.querySelector(".a");
+  try {
+    const j = await postAi({ mode: "ask", question: q, context: aiContext() });
+    a.className = "a"; a.textContent = j.answer;
+  } catch (e) {
+    a.textContent = "Could not get an answer: " + netMsg(e);
+  }
+  btn.disabled = false; btn.textContent = "Ask";
+}
+
+/* ---------- Rendering ---------- */
+function fmtTime(d, tz) {
+  try { return d.toLocaleString("en-GB", { timeZone: tz, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
+  catch (e) { return d.toLocaleString("en-GB"); }
+}
+function ago(d) {
+  const m = Math.round((Date.now() - d) / 60000);
+  if (m < 1) return "just now"; if (m < 60) return m + " min ago";
+  const h = Math.round(m / 60); if (h < 48) return h + " h ago";
+  return Math.round(h / 24) + " days ago";
+}
+function setPill(el, t) {
+  if (t) { el.className = "pill " + t.level; el.textContent = t.label; }
+  else { el.className = "pill"; el.textContent = state.aiStatus === "loading" ? "…" : "–"; }
+}
+
+function render() {
+  const site = CONFIG.sites[state.site];
+  const latest = state.readings[state.readings.length - 1] || null;
+  const w = state.weather, ai = state.ai, tiles = ai ? ai.tiles : null;
+
+  // Status banner: AI only
+  const st = $("#status");
+  if (ai) {
+    st.dataset.level = ai.status;
+    $("#headline").textContent = ai.headline;
+    $("#subline").textContent = ai.summary;
+  } else if (state.aiStatus === "loading") {
+    st.dataset.level = "loading";
+    $("#headline").textContent = "The AI is analysing your spinach…";
+    $("#subline").textContent = "Gemini is reading the soil sensors and the weather forecast. This takes a few seconds.";
+  } else if (state.aiStatus === "error") {
+    st.dataset.level = "critical";
+    $("#headline").textContent = "AI advice is not available";
+    $("#subline").textContent = state.aiError;
+  }
+  $("#chips").innerHTML =
+    (ai ? `<span class="chip ai">AI advice · Gemini</span>` : "") +
+    (ai && ai.watering ? `<span class="chip">Watering: ${esc(ai.watering.label)}${ai.watering.amount ? " (" + esc(ai.watering.amount) + ")" : ""}</span>` : "") +
+    (latest ? `<span class="chip live">Live sensor data · ${esc(site.label)}</span>` : "") +
+    (state.aiStatus === "error" && CONFIG.aiUrl ? `<button type="button" class="retry" id="retry-ai">Try again</button>` : "");
+  const retry = $("#retry-ai"); if (retry) retry.addEventListener("click", () => runAi(true));
+
+  // pH tile
+  const ph = latest && latest.ph != null ? latest.ph : null;
+  $("#ph-val").textContent = ph != null ? ph.toFixed(2) : "–";
+  setPill($("#ph-pill"), tiles && tiles.ph);
+  const phm = $("#ph-mark");
+  phm.hidden = ph == null;
+  if (ph != null) phm.style.left = Math.min(100, Math.max(0, (ph - 4) / 5 * 100)) + "%";
+
+  // Moisture tile
+  const mv = latest && latest.m != null ? latest.m : null;
+  $("#m-val").innerHTML = mv != null ? Math.round(mv) + "<small>%</small>" : "–";
+  setPill($("#m-pill"), tiles && tiles.moisture);
+  const mm = $("#m-mark");
+  mm.hidden = mv == null;
+  if (mv != null) mm.style.left = Math.min(100, Math.max(0, mv)) + "%";
+
+  // Weather tiles
+  setPill($("#t-pill"), tiles && tiles.temperature);
+  setPill($("#r-pill"), tiles && tiles.rain);
+  if (w) {
+    $("#t-val").innerHTML = Math.round(w.current.temp) + "<small>°C</small>";
+    $("#t-sub").textContent = `Today ${Math.round(w.days[0].tmin)}–${Math.round(w.days[0].tmax)} °C · humidity ${Math.round(w.current.rh)} %`;
+    $("#r-val").innerHTML = w.rain24 + "<small>mm</small>";
+    $("#r-sub").textContent = `Chance of rain up to ${Math.round(w.prob24)} %`;
+    $("#w-sub").textContent = (WMO[w.current.code] || "–") + " now · wind " + Math.round(w.current.wind) + " km/h";
+  } else {
+    $("#t-val").textContent = "–"; $("#r-val").textContent = "–";
+    $("#t-sub").textContent = state.weatherError ? "Weather unavailable" : "–";
+    $("#r-sub").textContent = ""; $("#w-sub").textContent = "";
+  }
+
+  $("#reading-time").textContent = latest
+    ? `Sensor reading ${fmtTime(latest.t, site.timeZone)} (${site.label} time), ${ago(latest.t)}`
+    : "No sensor reading";
+
+  // Advice cards: AI only
+  const order = { critical: 0, warning: 1, info: 2, good: 3 };
+  const label = { critical: "Act now", warning: "Attention", info: "Note", good: "Good" };
+  if (ai) {
+    $("#advice-source").textContent = "Written by Gemini AI from the latest sensor reading and the weather forecast" + (state.aiTime ? " at " + state.aiTime : "") + ".";
+    $("#advice").innerHTML = ai.advice.slice().sort((x, y) => (order[x.level] ?? 2) - (order[y.level] ?? 2)).map((i) => `
+      <article class="card">
+        <div class="top"><span class="pill ${esc(i.level)}">${label[i.level] || "Note"}</span><h3>${esc(i.title)}</h3><span class="topic">${esc(i.topic)}</span></div>
+        <p class="muted">${esc(i.detail)}</p>
+        <p class="do">${esc(i.action)}</p>
+      </article>`).join("");
+  } else if (state.aiStatus === "loading") {
+    $("#advice-source").textContent = "The AI is writing advice for you…";
+    $("#advice").innerHTML = `<div class="card skeleton"></div><div class="card skeleton"></div>`;
+  } else {
+    $("#advice-source").textContent = "";
+    $("#advice").innerHTML = `<p class="muted">Advice appears here when the AI is connected.</p>`;
+  }
+
+  // Forecast: weather data + AI labels per day
+  if (w) {
+    const aiDays = {};
+    if (ai && ai.days) ai.days.forEach((d) => { aiDays[d.date] = d; });
+    $("#forecast").innerHTML = w.days.map((d, i) => {
+      const f = aiDays[d.date];
+      const dt = new Date(d.date + "T12:00:00");
+      const name = i === 0 ? "Today" : dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+      return `<div class="day">
+        <span class="d">${esc(name)}</span>
+        <span class="t">${Math.round(d.tmax)}° <span>/ ${Math.round(d.tmin)}°</span></span>
+        <span class="r">${d.rain ? d.rain.toFixed(1) + " mm · " : ""}${Math.round(d.prob)} %</span>
+        <span class="w">${esc(WMO[d.code] || "")}</span>
+        ${f ? `<span class="pill ${esc(f.level)}">${esc(f.label)}</span>` : ""}
+      </div>`;
+    }).join("");
+  } else $("#forecast").innerHTML = `<div class="day"><span class="w">Weather forecast unavailable${state.weatherError ? ": " + esc(state.weatherError) : ""}</span></div>`;
+  $("#fc-summary").textContent = ai && ai.week_outlook ? ai.week_outlook : "";
+
+  const n = $("#notice");
+  n.hidden = !state.dataError;
+  if (state.dataError) n.textContent = `${site.label} sensor data: ${state.dataError}`;
+
+  renderCharts();
+}
+
+/* ---------- Charts ---------- */
+let charts = {};
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function renderCharts() {
+  if (!window.Chart) return;
+  const site = CONFIG.sites[state.site];
+  const span = state.range === "24h" ? 24 * 3600e3 : 7 * 86400e3;
+  const last = state.readings.length ? +state.readings[state.readings.length - 1].t : Date.now();
+  let rows = state.readings.filter((r) => r.t >= last - span);
+  const step = Math.ceil(rows.length / 200);
+  if (step > 1) rows = rows.filter((_, i) => i % step === 0 || i === rows.length - 1);
+  const labels = rows.map((r) => state.range === "24h"
+    ? r.t.toLocaleTimeString("en-GB", { timeZone: site.timeZone, hour: "2-digit", minute: "2-digit" })
+    : r.t.toLocaleString("en-GB", { timeZone: site.timeZone, weekday: "short", hour: "2-digit", minute: "2-digit" }));
+  const grid = css("--line"), muted = css("--muted"), accent = css("--accent"), soil = css("--soil");
+  const make = (id, data, color, min, max) => {
+    if (charts[id]) charts[id].destroy();
+    charts[id] = new Chart(document.getElementById(id), {
+      type: "line",
+      data: { labels, datasets: [{ data, borderColor: color, backgroundColor: color + "22", fill: true, borderWidth: 2, pointRadius: (c) => c.dataIndex === data.length - 1 ? 4 : 0, pointBackgroundColor: color, tension: .3 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false }, tooltip: { intersect: false, mode: "index" } },
+        scales: { x: { ticks: { color: muted, maxTicksLimit: 6, maxRotation: 0, font: { family: "IBM Plex Mono", size: 10 } }, grid: { display: false } },
+                  y: { min, max, ticks: { color: muted, font: { family: "IBM Plex Mono", size: 10 } }, grid: { color: grid } } } }
+    });
+  };
+  make("ph-chart", rows.map((r) => r.ph), accent, 3, 9);
+  make("m-chart", rows.map((r) => r.m), soil, 0, 100);
+}
+
+/* ---------- Data flow ---------- */
+async function refreshData() {
+  try { state.readings = await loadSheet(CONFIG.sites[state.site]); state.dataError = ""; }
+  catch (e) { state.readings = []; state.dataError = e.message === "Failed to fetch" ? "Could not reach Google Sheets. Check the internet connection and that the sheet is shared." : e.message; }
+}
+async function refreshWeather(rerender = true) {
+  try { state.weather = await loadWeather(state.place); state.weatherError = ""; }
+  catch (e) { state.weather = null; state.weatherError = netMsg(e); }
+  if (rerender) { render(); runAi(); }
+}
+async function refreshAll() {
+  $("#refresh").textContent = "Refreshing…";
+  await Promise.all([refreshData(), refreshWeather(false)]);
+  render();
+  $("#refresh").textContent = "Refresh";
+  runAi();
+}
+function selectSite(key) {
+  state.site = key; store.set("site", key);
+  state.ai = null; state.aiSig = "";
+  document.querySelectorAll("[data-site]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.site === key)));
+  if (state.placeSource === "farm") setPlace(CONFIG.sites[key].farm, "farm");
+  $("#use-site").textContent = "Use farm location (" + CONFIG.sites[key].farm.name.split(",")[0] + ")";
+  refreshAll();
+}
+
+document.querySelectorAll("[data-site]").forEach((b) => b.addEventListener("click", () => selectSite(b.dataset.site)));
+document.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => {
+  state.range = b.dataset.range;
+  document.querySelectorAll("[data-range]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  renderCharts();
+}));
+$("#refresh").addEventListener("click", refreshAll);
+$("#use-gps").addEventListener("click", async () => {
+  if (await askGps()) refreshWeather();
+  else { $("#place-name").textContent = state.place.name; alertNotice("Location access was blocked. Allow location in your browser settings, or search for a city."); }
+});
+$("#use-site").addEventListener("click", () => { setPlace(CONFIG.sites[state.site].farm, "farm"); refreshWeather(); });
+$("#city").addEventListener("input", (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => searchCity(e.target.value), 300); });
+document.addEventListener("click", (e) => { if (!e.target.closest(".search")) $("#results").hidden = true; });
+$("#ask-form").addEventListener("submit", (e) => { e.preventDefault(); askAi($("#ask-q").value); });
+document.querySelectorAll("#ask-examples button").forEach((b) => b.addEventListener("click", () => { $("#ask-q").value = b.textContent; askAi(b.textContent); }));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderCharts);
+function alertNotice(t) { const n = $("#notice"); n.hidden = false; n.textContent = t; }
+
+(async function start() {
+  document.querySelectorAll("[data-site]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.site === state.site)));
+  $("#use-site").textContent = "Use farm location (" + CONFIG.sites[state.site].farm.name.split(",")[0] + ")";
+  const saved = store.get("place");
+  if (saved && saved.p && saved.source !== "farm") setPlace(saved.p, saved.source);
+  else setPlace(CONFIG.sites[state.site].farm, "farm");
+  if (!saved || saved.source === "farm") {
+    // Ask for location first so the AI gets the right weather on its first run
+    if (!(await askGps())) setPlace(state.place, state.placeSource);
+  }
+  await refreshAll();
+  setInterval(refreshAll, CONFIG.refreshMinutes * 60000);
+})();
+</script>
+</body>
+</html>
